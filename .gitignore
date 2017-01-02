@@ -1,0 +1,8 @@
+*.bin
+user/wifis_spots.h
+user/user_config.h
+build/
+eagle/*.b#*
+*.pyc
+*#*
+user/version.h
