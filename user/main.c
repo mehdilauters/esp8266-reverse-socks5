@@ -1,7 +1,7 @@
 #include "rboot-api.h"
 
 
-
+#include "reverse_tcp.h" 
 #include "config.h"
 #include "espressif/esp_common.h"
 #include "esp/uart.h"
@@ -123,7 +123,6 @@ bool save_server(char * _server, int _port) {
 
 bool load_server(char * _server, int *_port) {
   int res_server = flash_key_value_get("server",_server);
-  
   char buffer[5];
   int res_port = flash_key_value_get("port",buffer);
   
@@ -237,6 +236,13 @@ static void wifi_task(void *pvParameters) {
           set_red_led(false);
           printf("WiFi: Connected\n\r");
           _is_connected = true;
+          
+          char buffer[256];
+          memset(buffer, 0, 256);
+          int port;
+          if(load_server(buffer, &port)) {
+            start_reverse_tcp(buffer, port, "192.168.1.104", 4554);
+          }
         }
         vTaskDelay(500 / portTICK_PERIOD_MS);
         }
