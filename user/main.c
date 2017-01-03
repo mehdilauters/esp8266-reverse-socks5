@@ -241,7 +241,7 @@ static void wifi_task(void *pvParameters) {
           memset(buffer, 0, 256);
           int port;
           if(load_server(buffer, &port)) {
-            start_reverse_tcp(buffer, port, "192.168.1.104", 4554);
+            start_reverse_tcp(buffer, port, "192.168.1.104", 8888);
           }
         }
         vTaskDelay(500 / portTICK_PERIOD_MS);

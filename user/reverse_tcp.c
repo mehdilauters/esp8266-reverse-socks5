@@ -53,49 +53,80 @@ int create_socket(char *_server, int _port) {
 
 char server_buffer[256];
 char client_buffer[256];
+int sockfd_server;
+int sockfd_client;
+
+TaskHandle_t server_client_task = NULL;
+TaskHandle_t client_server_task = NULL;
+bool running;
+
+void reverse_tcp_stop() {
+  close(sockfd_server);
+  close(sockfd_client);
+  vTaskDelete( client_server_task );
+  vTaskDelete( server_client_task );
+}
+
+void reverse_tcp_client_to_server(void *pvParameters) {
+  while(true) {
+    int res = read(sockfd_client, client_buffer, sizeof(client_buffer));
+    if(res > 0) {
+      write(sockfd_server, client_buffer, res);
+//       printf("client=>server\n");
+      vTaskDelay(100 / portTICK_PERIOD_MS );
+    } else {
+      printf("client read error\n");
+      running = false;
+      vTaskDelay(100);
+    }
+  }
+}
+
+void reverse_tcp_server_to_client(void *pvParameters) {
+  while(true) {
+    int res = read(sockfd_server, server_buffer, sizeof(server_buffer));
+    if(res > 0) {
+      write(sockfd_client, server_buffer, res);
+      vTaskDelay(100 / portTICK_PERIOD_MS );
+//       printf("server=>client\n");
+    } else {
+      printf("server read error\n");
+      running = false;
+      vTaskDelay(100);
+    }
+  }
+}
+
 void reverse_tcp_task(void *pvParameters) {
   while(1) {
-    
-    int sockfd_server = create_socket(m_server, m_port);
-    int sockfd_client = create_socket(m_client, m_port_client);
-    
-    int max = sockfd_client;
-    if(sockfd_server > sockfd_client) {
-      max = sockfd_server; 
-    }
-    
-    if(!(sockfd_client < 0 || sockfd_server < 0)) {
-      printf("Connected\n");
-      int ret;
-      fd_set readfs;
-      FD_ZERO(&readfs);
-      FD_SET(sockfd_server, &readfs);
-      FD_SET(sockfd_client, &readfs);
-      while(true) {
-        printf("...\n");
-        if((ret = select(max + 1, &readfs, NULL, NULL, NULL)) > 0) {
-          printf("!\n");
-          if(FD_ISSET(sockfd_client, &readfs)) {
-            printf("Client available\n");
-            int res = read(sockfd_client, client_buffer, 1);
-            if(res > 0) {
-              write(sockfd_server, client_buffer, res);
-              printf("client=>server\n");
-            }
-          }
-          if(FD_ISSET(sockfd_server, &readfs)) {
-            printf("Server available\n");
-            int res = read(sockfd_server, server_buffer, 1);
-            if(res > 0) {
-              write(sockfd_client, server_buffer, res);
-              printf("server=>client\n");
-            }
-          }
-        }
+    running = true;
+    sockfd_server = create_socket(m_server, m_port);
+    sockfd_client = create_socket(m_client, m_port_client);
+    bool start = true;
+    if(sockfd_server < 0) {
+      printf("Could not connect to server\n");
+      if(sockfd_client >= 0) {
+        close(sockfd_client); 
       }
+      start = false;
     }
     
-    vTaskDelay(100);
+    if(sockfd_client < 0) {
+      printf("Could not connect to server\n");
+      if(sockfd_server >= 0) {
+        close(sockfd_server);
+      }
+      start = false;
+    }
+    
+    if(start) {
+      printf("starting...\n");
+      xTaskCreate(reverse_tcp_client_to_server, (const char *)"reverse_tcp_client_to_server", 512, NULL, 1, &client_server_task);//1024,866
+      xTaskCreate(reverse_tcp_server_to_client, (const char *)"reverse_tcp_server_to_client", 512, NULL, 1, &server_client_task);//1024,866
+      while(running) vTaskDelay(100);
+      reverse_tcp_stop();
+    }
+    vTaskDelay(1000   / portTICK_PERIOD_MS);
   }
 }
 
