@@ -61,9 +61,28 @@ TaskHandle_t client_server_task = NULL;
 bool running;
 
 void reverse_tcp_stop() {
-  close(sockfd_client);
-  vTaskDelete( client_server_task );
+  
+  if(server_client_task != NULL) {
+    vTaskDelete( server_client_task );
+  }
+  
+  if(client_server_task != NULL) {
+    vTaskDelete( client_server_task );
+  }
+  
+  server_client_task = NULL;
+  client_server_task = NULL;
+  
+  if(sockfd_client != -1) {
+    close(sockfd_client);
+  }
+  
+  if(sockfd_server != -1) {
+    close(sockfd_server);
+  }
+  
   sockfd_client = -1;
+  sockfd_server = -1;
 }
 
 void reverse_tcp_client_to_server(void *pvParameters) {
@@ -128,8 +147,7 @@ void reverse_tcp_task(void *pvParameters) {
       xTaskCreate(reverse_tcp_server_to_client, (const char *)"reverse_tcp_server_to_client", 512, NULL, 1, &server_client_task);
       while(running) vTaskDelay(100);
       reverse_tcp_stop();
-      vTaskDelete( server_client_task );
-      close(sockfd_server);
+      vTaskDelay(100);
     }
     
     
