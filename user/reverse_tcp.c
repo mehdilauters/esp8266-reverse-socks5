@@ -61,7 +61,7 @@ TaskHandle_t client_server_task = NULL;
 bool running;
 
 void reverse_tcp_stop() {
-  
+  printf("Stopping...\n");
   if(server_client_task != NULL) {
     vTaskDelete( server_client_task );
   }
@@ -83,6 +83,7 @@ void reverse_tcp_stop() {
   
   sockfd_client = -1;
   sockfd_server = -1;
+  printf("Stopped...\n");
 }
 
 void reverse_tcp_client_to_server(void *pvParameters) {
@@ -105,6 +106,7 @@ void reverse_tcp_server_to_client(void *pvParameters) {
     int res = read(sockfd_server, server_buffer, sizeof(server_buffer));
     if(res > 0) {
       if(sockfd_client < 0) {
+        char * newline = strstr(server_buffer, "\n");
         char * separator = strstr(server_buffer, ":");
         if(separator != NULL) {
           int value_len = separator - server_buffer;
@@ -112,12 +114,18 @@ void reverse_tcp_server_to_client(void *pvParameters) {
           m_client[value_len] = '\0';
           char *p = server_buffer + value_len + 1; // ":" length
           m_port_client = strtol(p, NULL, 10);
+          printf("Tunneling %s:%d <=> %s:%d\n", m_server, m_port, m_client, m_port_client);
           sockfd_client = create_socket(m_client, m_port_client);
           if(sockfd_client < 0) {
             printf("Could not connect to client\n");
           } else {
-            printf("Tunneling %s:%d <=> %s:%d\n", m_server, m_port, m_client, m_port_client);
+            printf("Tunnel started\n");
             xTaskCreate(reverse_tcp_client_to_server, (const char *)"reverse_tcp_client_to_server", 512, NULL, 1, &client_server_task);
+            char *data = newline+1;
+            int length = res - (data - server_buffer);
+            if(length < res) {
+              write(sockfd_client, data, length);
+            }
           }
         }
       } else {
@@ -134,6 +142,7 @@ void reverse_tcp_server_to_client(void *pvParameters) {
 
 void reverse_tcp_task(void *pvParameters) {
   while(1) {
+    printf("Connecting to %s:%d\n",m_server, m_port);
     running = true;
     sockfd_server = create_socket(m_server, m_port);
     bool start = true;
