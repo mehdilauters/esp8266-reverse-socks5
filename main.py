@@ -25,20 +25,30 @@ class Forwarder(Thread):
       print "forwarding %s to %s"%(args.local, args.target)
       sock1.send(args.target)
     else:
-      sock1.send(self.parse_request(sock2.recv(buffer_size)))
+      request = self.parse_request(sock2.recv(buffer_size))
+      print "proxying %s"%request
+      sock1.send(request)
     self.sock1 = sock1
     self.sock2 = sock2
     
   def parse_request(self, _data):
     data = ''
-    res = re.match('GET http:\/\/([^:\/]+):?(\d*)?(.*)\sHTTP', _data)
+    res = re.match('(GET) http:\/\/([^:\/]+):?(\d*)?(.*)\sHTTP', _data)
     if res is not None:
-      host, port, uri = res.groups()
+      action, host, port, uri = res.groups()
       data = '%s'%host
-      if port != '':
-        data += ':%s'%port
+      if port == '':
+        port = 80
+      data += ':%s'%port
       data += "\n"
-      data += 'GET %s\n\n'%uri
+      
+      data += "%s %s HTTP/1.0\n\n"%(action,uri)
+      # parse headers
+      lines = _data.split("\r\n")
+      for line in lines[1:]:
+        res = re.match('.*Keep-Alive', line)
+        if res is None:
+          data += "%s\r\n"%line
     print data
     return data
       
@@ -50,6 +60,7 @@ class Forwarder(Thread):
         if socket == self.sock1:
           data = self.sock1.recv(buffer_size)
           if len(data) == 0:
+            print "Closing"
             self.sock2.close()
             self.sock1.close()
             return
@@ -59,6 +70,7 @@ class Forwarder(Thread):
         if socket == self.sock2:
           data = self.sock2.recv(buffer_size)
           if len(data) == 0:
+            print "Closing"
             self.sock2.close()
             self.sock1.close()
             return
