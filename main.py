@@ -3,7 +3,10 @@ import socket
 from threading import Thread
 import select
 import re
+import socks5
 
+
+socks5_server = None
 sockets = []
 fwds = []
 buffer_size = 4096
@@ -14,46 +17,28 @@ def parse_args():
   parser.add_argument("-l", "--local", help="local port")
   parser.add_argument("-t", "--target", help="host to connect CAUTION, port is mandatory (ie 192.168.1.1:80)")
   parser.add_argument("-p", "--proxy", action='store_true', help="proxy mode")
+  parser.add_argument("-s", "--socks5", action='store_true', help="socks5 proxy mode")
   return parser.parse_args()
   
 
-class Forwarder(Thread):
-  def __init__(self, args, sock1, sock2):
-    self.args = args
+class TcpForwarder(Thread):
+  def __init__(self, sock1, sock2, host = '', port = ''):
     Thread.__init__(self)
-    if not args.proxy:
-      print "forwarding %s to %s"%(args.local, args.target)
-      sock1.send(args.target)
-    else:
-      request = self.parse_request(sock2.recv(buffer_size))
-      print "proxying %s"%request
-      sock1.send(request)
     self.sock1 = sock1
     self.sock2 = sock2
+    self.target_host = host
+    self.target_port = port
+    self.initial_data = ''
     
-  def parse_request(self, _data):
-    data = ''
-    res = re.match('(GET) http:\/\/([^:\/]+):?(\d*)?(.*)\sHTTP', _data)
-    if res is not None:
-      action, host, port, uri = res.groups()
-      data = '%s'%host
-      if port == '':
-        port = 80
-      data += ':%s'%port
-      data += "\n"
-      
-      data += "%s %s HTTP/1.0\n\n"%(action,uri)
-      # parse headers
-      lines = _data.split("\r\n")
-      for line in lines[1:]:
-        res = re.match('.*Keep-Alive', line)
-        if res is None:
-          data += "%s\r\n"%line
-    print data
-    return data
-      
+  def tunnelling(self, host, port, initial_data = ''):
+    self.target_host = host
+    self.target_port = port
+    self.initial_data = initial_data
     
   def run(self):
+    print "forwarding to %s:%s"%(self.target_host, self.target_port)
+    self.sock1.send('%s:%s'%(self.target_host, self.target_port))
+    self.sock1.send(self.initial_data)
     while True:
       inputready, outputready, exceptready = select.select([self.sock1, self.sock2],[],[])
       for socket in inputready:
@@ -75,8 +60,30 @@ class Forwarder(Thread):
             self.sock1.close()
             return
           self.sock1.send(data)
-      
-    
+  
+class HttpForwarder(TcpForwarder):
+  def __init__(self, sock1, sock2):
+    TcpForwarder.__init__(self, sock1, sock2)
+    host, port, data = self.parse_request(sock2.recv(buffer_size))
+    self.tunnelling(host, port, data)
+  
+  def parse_request(self, _data):
+    host = None
+    port = None
+    data = ''
+    res = re.match('(GET) http:\/\/([^:\/]+):?(\d*)?(.*)\sHTTP', _data)
+    if res is not None:
+      action, host, port, uri = res.groups()
+      if port == '':
+        port = 80
+      data += "%s %s HTTP/1.0\n"%(action,uri)
+      # parse headers
+      lines = _data.split("\r\n")
+      for line in lines[1:]:
+        res = re.match('.*Keep-Alive', line)
+        if res is None:
+          data += "%s\r\n"%line
+    return (host, port, data)
 
 class TcpServer(Thread):
   allow_reuse_address = True
@@ -94,7 +101,10 @@ class Server(TcpServer):
     while True:
       conn, addr = self.server.accept()
       print 'Connected by', addr
-      sockets.append(conn)
+      if socks5_server is not None:
+        socks5_server.set_proxy_socket(conn)
+      else:
+        sockets.append(conn)
         
 
 class Proxy(TcpServer):
@@ -108,18 +118,31 @@ class Proxy(TcpServer):
       else:
         sockets.append(conn)
         if len(sockets) % 2 == 0:
-          f = Forwarder(self.args, sockets[-2], sockets[-1])
+          if self.args.proxy:
+            f = HttpForwarder(sockets[-2], sockets[-1])
+          else:
+            host, port = args.target.split(':')
+            f = TcpForwarder(sockets[-2], sockets[-1], host, port)
           f.start()
           fwds.append(f)
 
 def main(args):
-  
+  global socks5_server
   # Create the server, binding to localhost on port 9999
   server = Server(args, ('0.0.0.0', args.remote))
   server.start()
   
-  proxy = Proxy(args, ('0.0.0.0', args.local))
-  proxy.start()
+  if args.socks5:
+    print "starting socks5 server on %s"%args.local
+    socks5.Socks5Server.allow_reuse_address = True
+    auth = False
+    allowed_ips = None
+    user_manager = socks5.UserManager()
+    socks5_server = socks5.Socks5Server(args.local, auth, user_manager, allowed=allowed_ips)
+    socks5_server.serve_forever()
+  else:
+    proxy = Proxy(args, ('0.0.0.0', args.local))
+    proxy.start()
   
   server.join()
   proxy.join()
