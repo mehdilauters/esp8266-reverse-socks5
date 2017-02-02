@@ -1,7 +1,6 @@
-PROGRAM=my_program
-FLASH_SIZE=32
+PROGRAM=reverse_sock5
 PROGRAM_SRC_DIR=./user
-EXTRA_COMPONENTS=extras/rboot-ota extras/dhcpserver extras/http-parser extras/stdin_uart_interrupt extras/rboot-ota
+EXTRA_COMPONENTS=extras/rboot-ota extras/dhcpserver extras/http-parser
 
 all:
 	@echo "#define BUILD_DATE __DATE__" > $(PROGRAM_SRC_DIR)/version.h

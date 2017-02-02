@@ -18,52 +18,8 @@
 
 #include <unistd.h>
 
-#define T uint8_t
-#include "fifo.h"
-
-#define SERIAL_BUFFER_SIZE 64
-
 static bool _is_connected;
-fifo_t serial;
-uint8_t serial_buffer[SERIAL_BUFFER_SIZE];
 struct sdk_station_config wifi_config;
-
-unsigned int frc2_freq = 0;
-
-void set_red_led_blink(bool _status, unsigned int _frequency) {
-  
-  if( _frequency == 0 ) {
-    timer_set_interrupts(FRC1, false);
-    timer_set_run(FRC1, false); 
-    gpio_write(RED_LED_PIN, _status);
-  } else {
-    timer_set_frequency(FRC1, _frequency);
-    timer_set_interrupts(FRC1, true);
-    timer_set_run(FRC1, true);
-  }
-}
-
-
-void set_red_led(bool _status) {
-  set_red_led_blink(_status, 0);
-}
-
-void set_green_led_blink(bool _status, unsigned int _frequency) {
-  frc2_freq = _frequency;
-  if( _frequency == 0 ) {
-    timer_set_interrupts(FRC2, false);
-    timer_set_run(FRC2, false); 
-    gpio_write(GREEN_LED_PIN, _status);
-  } else {
-    timer_set_frequency(FRC2, _frequency);
-    timer_set_interrupts(FRC2, true);
-    timer_set_run(FRC2, true);
-  }
-}
-
-void set_green_led(bool _status) {
-  set_green_led_blink(_status, 0);
-}
 
 bool save_network(char * _essid, char *_password) {
   printf("saving essid=%s, password=%s to flash\n",_essid, _password);
@@ -180,26 +136,6 @@ bool is_connected() {
 }
 
 
-bool get_serial(uint8_t *_c) {
-  if(! fifo_isempty(&serial)) {
-    *_c = fifo_pop(&serial);
-    return true;
-  }
-  return false;
-}
-
-void serial_task(void *pvParameters) {
-  char c;
-  while(1) {
-    if (read(0, (void*)&c, 1)) { // 0 is stdin
-      if(! fifo_isfull(&serial)) {
-        fifo_push(&serial, c);
-        printf("%c\n",c);
-      }
-    }
-  }
-}
-
 static void wifi_task(void *pvParameters) {
   uint8_t status = 0;
   uint8_t retries = 30;
@@ -233,7 +169,6 @@ static void wifi_task(void *pvParameters) {
       while ((status = sdk_wifi_station_get_connect_status())
         == STATION_GOT_IP) {
         if ( ! _is_connected ) {
-          set_red_led(false);
           printf("WiFi: Connected\n\r");
           _is_connected = true;
           
@@ -253,123 +188,21 @@ static void wifi_task(void *pvParameters) {
     }
 }
 
-static void buttons_task(void *pvParameters) {
-  uint32_t next_ts = 0;
-  uint32_t program_ts = 0;
-  uint32_t playpause_ts = 0;
-  
-  bool playpause_fired = false;
-  bool next_fired = false;
-  bool program_enabled = false;
-  while(true) {
-    bool next = gpio_read(NEXT_PUSH_PIN);
-    bool program = gpio_read(PROGRAM_PUSH_PIN);
-    
-    // program bytton has a pull up
-    if(!program) {
-      if(program_enabled) {
-        if(program_ts == 0) {
-          program_ts = xTaskGetTickCount()*portTICK_PERIOD_MS;
-        }
-        
-        if(xTaskGetTickCount()*portTICK_PERIOD_MS - program_ts > 3000) {
-          printf("RESET\n"); 
-          program_enabled = false;
-          flash_erase_all();
-          sdk_system_restart();
-        }
-      }
-    } else {
-      program_enabled = true;
-      program_ts = 0;
-    }
-    
-    if(next) {
-      if(next_ts == 0) {
-        next_ts = xTaskGetTickCount()*portTICK_PERIOD_MS;
-      }
-      if( ! next_fired ) {
-        if(xTaskGetTickCount()*portTICK_PERIOD_MS - next_ts > BUTTON_PRESSED_DELAY) {
-          next_fired = true;
-        }
-      }
-    } else {
-      next_fired = false;
-      next_ts = 0;
-    }
-     
-    
-    bool playpause = ! gpio_read(PLAYPAUSE_PUSH_PIN);
-    if(playpause) {
-      if(playpause_ts == 0) {
-        playpause_ts = xTaskGetTickCount()*portTICK_PERIOD_MS;
-      }
-      if( ! playpause_fired ) {
-        if(xTaskGetTickCount()*portTICK_PERIOD_MS - playpause_ts > BUTTON_PRESSED_DELAY) {
-          playpause_fired = true;
-        }
-      }
-    } else {
-      playpause_ts = 0;
-      playpause_fired = false;
-    }
-    
-//     printf("program %d next %d  play_pause %d\n",program, next, playpause);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-  }
-}
-
-
-void frc1_interrupt_handler(void)
-{
-  gpio_toggle(RED_LED_PIN);
-}
-
-void frc2_interrupt_handler(void)
-{
-  /* FRC2 needs the match register updated on each timer interrupt */
-  timer_set_frequency(FRC2, frc2_freq);
-  gpio_toggle(GREEN_LED_PIN);
-}
-
 //Init function 
 void user_init() {
   _is_connected = false;
-  fifo_init(&serial, serial_buffer, SERIAL_BUFFER_SIZE);
-  
   uart_set_baud(0, 9600);
-  xTaskCreate(serial_task, (const char *)"serial_task", 512, NULL, 2, NULL);//1024,866
   
-  xTaskCreate(buttons_task, (const char *)"buttons_task", 512, NULL, 2, NULL);//1024,866
-  
-  timer_set_interrupts(FRC1, false);
-  timer_set_run(FRC1, false);
-  _xt_isr_attach(INUM_TIMER_FRC1, frc1_interrupt_handler);
-  
-  timer_set_interrupts(FRC2, false);
-  timer_set_run(FRC2, false);
-  _xt_isr_attach(INUM_TIMER_FRC2, frc2_interrupt_handler);
   
   uint32_t id = sdk_system_get_chip_id();
   printf("#%d\n", id);
   webserverInit();
   
-  gpio_enable(NEXT_PUSH_PIN, GPIO_INPUT);
-  gpio_enable(PROGRAM_PUSH_PIN, GPIO_INPUT);
-  
-  gpio_enable(GREEN_LED_PIN, GPIO_OUTPUT);
-  set_green_led(false);
-  
-  gpio_enable(RED_LED_PIN, GPIO_OUTPUT);
-  set_red_led(false);
-  
   
   if( load_network(&wifi_config)) {
-    set_red_led_blink(true, 5);
     connect(&wifi_config);
     xTaskCreate(wifi_task, (const char *)"wifi_task", 512, NULL, 1, NULL);//1024,866
   } else {
-    set_red_led_blink(true, 1);
     flash_erase_all();
     setup_ap();
   }

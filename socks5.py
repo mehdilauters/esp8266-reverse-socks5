@@ -352,8 +352,6 @@ class Socks5Server(ThreadingTCPServer):
       return self.__proxy_socket
     
     def set_proxy_socket(self, proxy_socket):
-      print "========"
-      print proxy_socket
       self.__proxy_socket = proxy_socket
 
     def get_user_manager(self):
