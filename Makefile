@@ -7,4 +7,4 @@ all:
 	@echo "#define BUILD_TIME __TIME__" >> $(PROGRAM_SRC_DIR)/version.h
 	@echo "#define GIT_VERSION \"$(shell git describe --always)\"" >> $(PROGRAM_SRC_DIR)/version.h
 
-include /home/mehdi/Mehdi/perso/esp-open-rtos/common.mk
+include /PATH/TO/esp-open-rtos/common.mk
