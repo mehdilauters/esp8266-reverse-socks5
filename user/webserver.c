@@ -1,6 +1,5 @@
 #include "webserver.h" 
 #include "ota.h"
-#include "version.h"
 #include "espressif/esp_common.h"
 #include "config.h"
 #include <string.h>
@@ -235,9 +234,6 @@ void handle(int _sockfd, struct sockaddr_in *_addr) {
   memset(buffer,0,size);
   sprintf(buffer, "%s", page_content);
   
-  replace(buffer, "DATE_BUILD", BUILD_DATE);
-  replace(buffer, "TIME_BUILD", BUILD_TIME);
-  replace(buffer, "GIT_VERSION", GIT_VERSION);
   uint32_t id = sdk_system_get_chip_id();
   char id_buff[10];
   sprintf(id_buff, "%d", id);

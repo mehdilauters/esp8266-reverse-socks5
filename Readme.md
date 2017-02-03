@@ -13,7 +13,9 @@ Uses the esp8266 with a known wifi access point to build a reverse socks5 tunnel
  - Setup your esp-open-rtos path in the makefile
  - Flash and start the esp
  - wait it creates a configuration access point
+ - connect to [http://172.16.0.1/](http://172.16.0.1/)
  - configure wifi and home server
+ - do not forget to fill the ````Security check```` with the serial id as returned by ````sdk_system_get_chip_id()````
  - reboot
 
 Then on the server side, start the socks5 proxy
